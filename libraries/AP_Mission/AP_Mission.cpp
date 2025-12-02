@@ -236,13 +236,47 @@ bool AP_Mission::starts_with_takeoff_cmd()
 */
 bool AP_Mission::continue_after_land_check_for_takeoff()
 {
+    // Kullanıcı MIS_OPTIONS ile "ContinueAfterLand" seçmemişse zaten devam etmiyoruz
     if (!continue_after_land()) {
         return false;
     }
+
+    // Geçerli nav komutu yoksa devam etmeyelim
     if (_nav_cmd.index == AP_MISSION_CMD_INDEX_NONE) {
         return false;
     }
-    return is_takeoff_next(_nav_cmd.index+1);
+
+    Mission_Command cmd{};
+    uint16_t idx = _nav_cmd.index + 1;
+
+    bool first_takeoff_found = false;
+
+    // Sonsuz döngü / mission loop riskine karşı limit koy (örnek: 32 adım)
+    for (uint8_t i = 0; i < 32 && idx < (uint16_t)_cmd_total; i++) {
+
+        // Sonraki NAV komutunu bul
+        if (!get_next_nav_cmd(idx, cmd)) {
+            // NAV komutu kalmadı, ikinci takeoff yok
+            return false;
+        }
+
+        // Bu NAV komutu TAKEOFF tipi mi?
+        if (is_takeoff_type_cmd(cmd.id)) {
+            if (first_takeoff_found) {
+                // Daha önce de takeoff görmüştük; bu ikinci takeoff => devam et
+                return true;
+            } else {
+                // İlk gördüğümüz takeoff olarak işaretliyoruz
+                first_takeoff_found = true;
+            }
+        }
+
+        // Bir sonraki aramaya, şu komuttan sonrasından devam et
+        idx = cmd.index + 1;
+    }
+
+    // Limit içinde ikinci bir takeoff bulunamadı
+    return false;
 }
 
 /// start_or_resume - if MIS_AUTORESTART=0 this will call resume(), otherwise it will call start()
